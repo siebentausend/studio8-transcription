@@ -137,19 +137,33 @@ class SingleModeHandler(FileSystemEventHandler):
     def _enqueue(self, path: str):
         if path in self.submitted:
             return
-        self.submitted.add(path)
 
         src    = Path(path)
         name   = src.name
-        job_id = str(uuid.uuid4())[:8]
 
+        # Resolve output directory first so we can check for existing transcript
+        raw_output = self.config.get("output", os.environ.get("OUTPUT_DIR", "./output"))
+        if raw_output == "same_as_source":
+            output_dir = str(src.parent)
+        else:
+            output_dir = raw_output
+
+        # Skip if transcript already exists — avoids re-processing after restart
+        expected_transcript = Path(output_dir) / f"{src.stem}_transcript.txt"
+        if expected_transcript.exists():
+            self.submitted.add(path)
+            log.info(f"[{self.config['name']}] Skipping (transcript exists): {name}")
+            return
+
+        self.submitted.add(path)
+
+        job_id = str(uuid.uuid4())[:8]
         self._staging.mkdir(parents=True, exist_ok=True)
         staged = self._staging / f"{job_id}_{name}"
         shutil.copy2(str(src), str(staged))
 
-        output_dir = self.config.get("output", os.environ.get("OUTPUT_DIR", "./output"))
-        priority   = self.config.get("priority", 5)
-        language   = self.config.get("language") or None
+        priority = self.config.get("priority", 5)
+        language = self.config.get("language") or None
 
         submit_job(
             job_id,
@@ -160,7 +174,7 @@ class SingleModeHandler(FileSystemEventHandler):
             output_dir=output_dir,
             language=language,
         )
-        log.info(f"[{self.config['name']}] Queued: {name} [{job_id}] (priority {priority}, lang={language or 'auto'})")
+        log.info(f"[{self.config['name']}] Queued: {name} [{job_id}] (priority {priority}, lang={language or 'auto'}, output={output_dir})")
 
     def scan_existing(self):
         watch_path = Path(self.config["path"])
@@ -185,10 +199,10 @@ class BatchModePoller:
 
     Expected structure:
         <path>/
-        └── 260507_ED_TEST_05/
-            ├── 153_1149.mxf
-            ├── 153_1150.mxf
-            └── 260507_ED_TEST_05.done   ← trigger
+        └── 20240101_ProjectName_Card01/
+            ├── clip001.mxf
+            ├── clip002.mxf
+            └── 20240101_ProjectName_Card01.done   ← trigger
     """
 
     def __init__(self, config: dict, poll_interval: int = 10):

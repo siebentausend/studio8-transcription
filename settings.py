@@ -23,9 +23,9 @@ CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "./config.yaml"))
 
 @dataclass
 class Branding:
-    organization: str = "Studio"
+    organization: str = "Studio 8, Washington"
     app_name: str = "Transcription"
-    footer: str = "WhisperX · pyannote · Studio"
+    footer: str = "WhisperX · pyannote · Studio 8, Washington"
     system_subtitle: str = "System Status"
     queue_subtitle: str = "Queue"
 
@@ -100,6 +100,7 @@ class Transcript:
 
 @dataclass
 class Config:
+    version: str = "0.9.0-beta"
     branding: Branding = field(default_factory=Branding)
     colors: Colors = field(default_factory=Colors)
     model: Model = field(default_factory=Model)
@@ -125,6 +126,8 @@ def load_config() -> Config:
     try:
         with open(CONFIG_PATH, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        if "version" in data:
+            config.version = str(data["version"])
         if "branding" in data:
             _merge(config.branding, data["branding"])
         if "colors" in data:

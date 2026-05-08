@@ -85,7 +85,7 @@ def _nav(active: str) -> str:
 </header>"""
 
 def _footer() -> str:
-    return f"<footer>{cfg.branding.footer}</footer>"
+    return f"<footer>{cfg.branding.footer} · v{cfg.version}</footer>"
 
 def _lang_options() -> str:
     opts = "\n".join(
@@ -176,9 +176,9 @@ async def api_system():
             return "unknown"
 
     services = {
-        "worker":      svc_status("transkription-worker"),
-        "watchfolder": svc_status("transkription-watchfolder"),
-        "webgui":      svc_status("transkription-webgui"),
+        "worker":      svc_status("transcription-worker"),
+        "watchfolder": svc_status("transcription-watchfolder"),
+        "webgui":      svc_status("transcription-webgui"),
     }
 
     gpu = {}
@@ -210,7 +210,7 @@ async def api_system():
     except Exception:
         disk = {"error": "unavailable"}
 
-    return JSONResponse({"services": services, "gpu": gpu, "queue": counts, "disk": disk})
+    return JSONResponse({"version": cfg.version, "services": services, "gpu": gpu, "queue": counts, "disk": disk})
 
 
 @app.post("/webhook/ingest-complete")
@@ -672,7 +672,7 @@ async function refresh(){{
       <div class="stat-row"><span class="stat-label">Free</span><span class="stat-val">${{disk.free_gb}} GB</span></div>`;
   }}
 
-  document.getElementById('rn').textContent='Refreshed '+new Date().toLocaleTimeString('en-GB');
+  document.getElementById('rn').textContent='v'+d.version+' · Refreshed '+new Date().toLocaleTimeString('en-GB');
 }}
 
 refresh();

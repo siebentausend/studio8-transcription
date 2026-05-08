@@ -1,14 +1,11 @@
-# config.yaml.example
+# config.yaml
 # ────────────────────────────────────────────────────────────────────
-# Template for Studio 8 Transcription System configuration.
-# 
-# Setup:
-#   1. Copy this file to config.yaml
-#   2. Adjust all values to match your environment
-#   3. Restart services: sudo systemctl restart transkription-*
-#
-# IMPORTANT: Do NOT commit config.yaml to version control!
-#            Only this .example file should be in Git.
+# Central configuration for the Transcription System.
+# Copy this file to config.yaml and adjust to your needs.
+# Changes take effect after restarting the affected service(s):
+#   sudo systemctl restart transcription-webgui
+#   sudo systemctl restart transcription-worker
+#   sudo systemctl restart transcription-watchfolder
 # ────────────────────────────────────────────────────────────────────
 
 version: "0.9.1-beta"
@@ -17,13 +14,13 @@ version: "0.9.1-beta"
 # ── Branding ─────────────────────────────────────────────────────────
 branding:
   # Shown in browser tab and page header
-  organization: "Studio 8, Washington"
+  organization: "Your Organization"
 
   # Shown next to the organization name in the header (after the separator)
   app_name: "Transcription"
 
   # Footer text on all pages
-  footer: "WhisperX · pyannote · Studio 8, Washington"
+  footer: "WhisperX · pyannote · Your Organization"
 
   # Shown on the /system status page subtitle
   system_subtitle: "System Status"
