@@ -50,12 +50,9 @@ Quick overview:
 
 | File | Purpose | In Git |
 |------|---------|--------|
-| `config.yaml.example` | Branding, model, colors, priorities | ✅ |
-| `watchfolders.yaml.example` | Watchfolder paths and modes | ✅ |
-| `.env.example` | Tokens, secrets, paths | ✅ |
-| `config.yaml` | Your actual configuration | ❌ |
-| `watchfolders.yaml` | Your actual watchfolder setup | ❌ |
-| `.env` | Your actual secrets | ❌ |
+| `config.yaml` | Branding, model, colors, priorities | ✅ |
+| `watchfolders.yaml` | Watchfolder paths and modes | ✅ |
+| `.env` | Tokens, secrets, paths | ✅ |
 
 ## Version
 
