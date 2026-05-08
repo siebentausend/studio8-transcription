@@ -1,0 +1,51 @@
+# watchfolders.yaml.example
+# ─────────────────────────
+# Template for watchfolder configuration.
+#
+# Setup:
+#   1. Copy this file to watchfolders.yaml
+#   2. Adjust all paths to match your environment
+#   3. Restart: sudo systemctl restart transkription-watchfolder
+#
+# IMPORTANT: Do NOT commit watchfolders.yaml to version control!
+#            Only this .example file should be in Git.
+# ─────────────────────────────────────────────────────────────────────
+
+watchfolders:
+
+  # ── Mode: single ──────────────────────────────────────────────────────────
+  # Each file gets its own transcript.
+  # Monitored continuously by the watchfolder daemon.
+
+  - name: "General Intake"
+    mode: single
+    path: "/opt/transkription/watchfolder"
+    output: "/opt/transkription/output"
+    priority: 5
+    enabled: true
+
+  # ── Mode: batch ───────────────────────────────────────────────────────────
+  # All clips in a card folder → one combined transcript.
+  # Triggered when Source-System (e.g. In2it Exchange) drops a .done marker file inside the
+  # card folder. The marker filename must match the folder name:
+  #
+  #   /mnt/NAS/your-project-folder/
+  #   └── 260427_Video_01/
+  #       ├── 260427_Video_01_001.mxf
+  #       ├── 260427_Video_01_002.mxf
+  #       └── 260427_Video_01.done  ← trigger
+  #
+  # The transcript is written to <output>/<folder_name>_transcript.txt
+
+  - name: "NAS Archive — Current"
+    mode: batch
+    path: "/mnt/NAS/your-project-folder/Current"
+    outputs:
+      - "same_as_source"
+      # - "/mnt/NAS/your-project-folder/Transcripts"  # example: additional NAS folder
+      # - "/opt/transkription/output"                  # example: local archive
+    priority: 7
+    enabled: true
+    done_extension: ".done"
+    delete_done_file: true
+    # language: "de"

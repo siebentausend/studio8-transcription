@@ -1,0 +1,17 @@
+# Transkriptions-System – Abhängigkeiten
+# Installation: pip install -r requirements.txt
+
+# Kern
+whisperx>=3.1.1
+faster-whisper>=1.0.0
+
+# Web-GUI
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# Watchfolder
+watchdog>=4.0.0
+
+# Audio/Video-Metadaten (ffprobe-Wrapper, ffmpeg muss separat installiert sein)
+ffmpeg-python>=0.2.0

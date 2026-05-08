@@ -1,0 +1,184 @@
+"""
+jobstore.py
+───────────
+Shared SQLite job queue.
+Used by: app.py (submit + read), watchfolder.py (submit),
+         worker.py (claim + update).
+"""
+
+import sqlite3
+import os
+from datetime import datetime
+from pathlib import Path
+
+DB_PATH = Path(os.environ.get("OUTPUT_DIR", "./output")) / "jobstore.db"
+
+
+def _connect() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=10)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    return con
+
+
+def _get_priority(source: str) -> int:
+    """Look up default priority for a source from config."""
+    try:
+        from settings import cfg
+        if source == "upload":
+            return cfg.priority.manual_upload
+        return cfg.priority.watchfolder_default
+    except Exception:
+        return 10 if source == "upload" else 5
+
+
+def init_db():
+    with _connect() as con:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                id          TEXT PRIMARY KEY,
+                source      TEXT NOT NULL DEFAULT 'upload',
+                filename    TEXT NOT NULL,
+                filepath    TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'queued',
+                priority    INTEGER NOT NULL DEFAULT 5,
+                mode        TEXT NOT NULL DEFAULT 'single',
+                output_dir  TEXT DEFAULT '',
+                step        INTEGER DEFAULT 0,
+                total       INTEGER DEFAULT 5,
+                message     TEXT DEFAULT '',
+                error       TEXT DEFAULT '',
+                output      TEXT DEFAULT '',
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            )
+        """)
+        for col, definition in [
+            ("priority",    "INTEGER NOT NULL DEFAULT 5"),
+            ("mode",        "TEXT NOT NULL DEFAULT 'single'"),
+            ("output_dir",  "TEXT DEFAULT ''"),
+            ("output_dirs", "TEXT DEFAULT ''"),   # JSON list of additional output paths
+            ("language",    "TEXT DEFAULT ''"),
+        ]:
+            try:
+                con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {definition}")
+            except Exception:
+                pass
+        con.commit()
+
+
+def submit_job(
+    job_id: str,
+    filename: str,
+    filepath: str,
+    source: str = "upload",
+    priority: int | None = None,
+    mode: str = "single",
+    output_dir: str = "",
+    output_dirs: list | None = None,
+    language: str | None = None,
+):
+    """Add a new job to the queue."""
+    import json as _json
+    now      = datetime.now().isoformat(timespec="seconds")
+    if priority is None:
+        priority = _get_priority(source)
+    with _connect() as con:
+        con.execute("""
+            INSERT INTO jobs
+                (id, source, filename, filepath, status, priority,
+                 mode, output_dir, output_dirs, language, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
+        """, (job_id, source, filename, filepath, priority, mode,
+              output_dir, _json.dumps(output_dirs or []), language or "", now, now))
+        con.commit()
+
+
+def claim_next_job() -> dict | None:
+    """Atomically claim the next queued job.
+    Picks highest priority first; ties broken by creation time (FIFO).
+    """
+    with _connect() as con:
+        row = con.execute("""
+            SELECT * FROM jobs WHERE status = 'queued'
+            ORDER BY priority DESC, created_at ASC LIMIT 1
+        """).fetchone()
+        if not row:
+            return None
+        now = datetime.now().isoformat(timespec="seconds")
+        con.execute("""
+            UPDATE jobs SET status='running', updated_at=? WHERE id=?
+        """, (now, row["id"]))
+        con.commit()
+    return dict(row)
+
+
+def update_job(job_id: str, status: str, step: int = 0, total: int = 5,
+               message: str = "", error: str = "", output: str = ""):
+    now = datetime.now().isoformat(timespec="seconds")
+    with _connect() as con:
+        con.execute("""
+            UPDATE jobs SET status=?, step=?, total=?, message=?,
+                            error=?, output=?, updated_at=?
+            WHERE id=?
+        """, (status, step, total, message, error, output, now, job_id))
+        con.commit()
+
+
+def get_job(job_id: str) -> dict | None:
+    with _connect() as con:
+        row = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_jobs(limit: int = 100, source: str | None = None) -> list[dict]:
+    with _connect() as con:
+        if source:
+            rows = con.execute("""
+                SELECT * FROM jobs WHERE source=?
+                ORDER BY created_at DESC LIMIT ?
+            """, (source, limit)).fetchall()
+        else:
+            rows = con.execute("""
+                SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?
+            """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_job(job_id: str) -> bool:
+    """Delete a single job including running ones (triggers worker cancellation).
+    Returns True if deleted, False if not found."""
+    with _connect() as con:
+        cur = con.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        con.commit()
+    return cur.rowcount > 0
+
+
+def delete_jobs(status: str | None = None) -> int:
+    """
+    Delete jobs by status, or all jobs if status is None.
+    Running jobs are never deleted.
+    Returns number of deleted rows.
+    """
+    with _connect() as con:
+        if status:
+            cur = con.execute(
+                "DELETE FROM jobs WHERE status=? AND status != 'running'",
+                (status,)
+            )
+        else:
+            cur = con.execute("DELETE FROM jobs WHERE status != 'running'")
+        con.commit()
+    return cur.rowcount
+
+
+def reset_stale_jobs():
+    """Reset any jobs stuck in 'running' state (e.g. after a crash)."""
+    now = datetime.now().isoformat(timespec="seconds")
+    with _connect() as con:
+        con.execute("""
+            UPDATE jobs SET status='queued', step=0, message='Requeued after restart', updated_at=?
+            WHERE status='running'
+        """, (now,))
+        con.commit()

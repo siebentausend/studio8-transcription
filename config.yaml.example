@@ -1,0 +1,133 @@
+# config.yaml.example
+# ────────────────────────────────────────────────────────────────────
+# Template for Studio 8 Transcription System configuration.
+# 
+# Setup:
+#   1. Copy this file to config.yaml
+#   2. Adjust all values to match your environment
+#   3. Restart services: sudo systemctl restart transkription-*
+#
+# IMPORTANT: Do NOT commit config.yaml to version control!
+#            Only this .example file should be in Git.
+# ────────────────────────────────────────────────────────────────────
+
+version: "0.9.1-beta"
+
+
+# ── Branding ─────────────────────────────────────────────────────────
+branding:
+  # Shown in browser tab and page header
+  organization: "Studio 8, Washington"
+
+  # Shown next to the organization name in the header (after the separator)
+  app_name: "Transcription"
+
+  # Footer text on all pages
+  footer: "WhisperX · pyannote · Studio 8, Washington"
+
+  # Shown on the /system status page subtitle
+  system_subtitle: "System Status"
+
+  # Shown on the /queue page subtitle
+  queue_subtitle: "Queue"
+
+
+# ── Color scheme ──────────────────────────────────────────────────────
+# All values are CSS color strings (hex, rgb, named colors, etc.)
+colors:
+  # Page background
+  bg: "#080808"
+
+  # Card / panel background
+  surface: "#111111"
+
+  # Slightly lighter surface (hover states, alternating rows)
+  surface2: "#1a1a1a"
+
+  # Primary border color
+  border: "#333333"
+
+  # Secondary border / separator color
+  border2: "#484848"
+
+  # Primary text color
+  text: "#f0f0f0"
+
+  # Muted / secondary text
+  muted: "#888888"
+
+  # Status colors
+  green: "#39d98a"    # done / active
+  amber: "#ffcc00"    # running / warning
+  red:   "#ff5555"    # error / danger
+  blue:  "#58a6ff"    # info (reserved)
+
+
+# ── Model settings ────────────────────────────────────────────────────
+model:
+  # Whisper model size
+  # Options: tiny, base, small, medium, large-v2, large-v3, large-v3-turbo
+  # large-v3 requires ~6 GB VRAM; large-v3-turbo needs ~3 GB
+  whisper_model: "large-v3"
+
+  # Compute device: "cuda" or "cpu"
+  device: "cuda"
+
+  # Default language (null = auto-detect per file)
+  # Use ISO 639-1 codes: en, de, es, fr, it, etc.
+  default_language: null
+
+  # Languages shown in the upload GUI dropdown (in addition to Auto-detect)
+  # Format: [code, display_label]
+  upload_languages:
+    - ["en", "English"]
+    - ["de", "Deutsch"]
+    - ["es", "Español"]
+
+  # Batch size for Whisper inference
+  # Reduce if CUDA out-of-memory errors occur (try 2 or 1)
+  batch_size: 2
+
+  # Seconds between timecode breaks for single-speaker segments
+  tc_interval: 60
+
+
+# ── Priority queue ────────────────────────────────────────────────────
+# Jobs are processed highest-priority first.
+# Within the same priority, jobs are processed in submission order (FIFO).
+# Running jobs are never interrupted — priority only affects queued jobs.
+# Valid range: 1 (lowest) to 100 (highest).
+priority:
+  # Web GUI manual uploads — should always be highest
+  manual_upload: 10
+
+  # General watchfolder (single-mode entries without explicit priority)
+  watchfolder_default: 5
+
+  # Note: batch-mode watchfolder entries have their own priority
+  # setting per entry in watchfolders.yaml
+
+
+# ── Transcript output ─────────────────────────────────────────────────
+transcript:
+  # Label used in the Date field
+  date_label: "Date"
+
+  # Label used in the File field
+  file_label: "File"
+
+  # Label used in the Duration field
+  duration_label: "Duration"
+
+  # Label used in the Language field
+  language_label: "Language"
+
+  # Label used in the Timecode start field
+  timecode_label: "Timecode start"
+
+  # Separator line character and length
+  separator_char: "─"
+  separator_length: 44
+
+  # Fallback speaker label when diarization is skipped (no HF_TOKEN)
+  fallback_speaker: "SPEAKER_A"

@@ -1,0 +1,50 @@
+# .gitignore
+# Studio 8 Transcription System
+
+# ── Sensible Dateien (NOT in version control) ─────────────────────────
+.env
+.env.local
+.env.*.local
+config.yaml
+watchfolders.yaml
+
+# ── Secrets und Keys ──────────────────────────────────────────────────
+*.key
+*.pem
+secrets/
+credentials/
+.ssh/
+
+# ── System / IDE ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Python ───────────────────────────────────────────────────────────
+venv/
+env/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Logs und Temp ─────────────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+.cache/
+
+# ── Datenbank ─────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── OS ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
