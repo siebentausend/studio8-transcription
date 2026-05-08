@@ -314,6 +314,81 @@ class BatchModePoller:
                 )
 
 
+# ─── Single-mode poller (polling) ────────────────────────────────────────────
+
+class SingleModePoller:
+    """
+    Polls a flat folder every poll_interval seconds for new media files.
+    Used instead of watchdog for CIFS/NFS mounts that don't deliver inotify events.
+
+    Configure per entry in watchfolders.yaml:
+        poll: true
+        poll_interval: 10   # optional, defaults to BATCH_POLL_INTERVAL env var
+    """
+
+    def __init__(self, config: dict, poll_interval: int = 10):
+        self.config        = config
+        self.poll_interval = config.get("poll_interval", poll_interval)
+        self.submitted: set[str] = set()
+        self._staging = Path(os.environ.get("OUTPUT_DIR", "./output")) / "staging"
+
+    def scan(self):
+        watch_path = Path(self.config["path"])
+        if not watch_path.exists():
+            log.warning(f"[{self.config['name']}] Path not reachable: {watch_path}")
+            return
+
+        for p in watch_path.iterdir():
+            if not p.is_file():
+                continue
+            if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                continue
+            if str(p) in self.submitted:
+                continue
+            self._enqueue(str(p))
+
+    def _enqueue(self, path: str):
+        src  = Path(path)
+        name = src.name
+
+        raw_output = self.config.get("output", os.environ.get("OUTPUT_DIR", "./output"))
+        if raw_output == "same_as_source":
+            output_dir = str(src.parent)
+        else:
+            output_dir = raw_output
+
+        # Skip if transcript already exists
+        expected_transcript = Path(output_dir) / f"{src.stem}_transcript.txt"
+        if expected_transcript.exists():
+            self.submitted.add(path)
+            log.info(f"[{self.config['name']}] Skipping (transcript exists): {name}")
+            return
+
+        self.submitted.add(path)
+
+        job_id = str(uuid.uuid4())[:8]
+        self._staging.mkdir(parents=True, exist_ok=True)
+        staged = self._staging / f"{job_id}_{name}"
+        shutil.copy2(str(src), str(staged))
+
+        priority = self.config.get("priority", 5)
+        language = self.config.get("language") or None
+
+        submit_job(
+            job_id,
+            filename=name,
+            filepath=str(staged),
+            source="watchfolder",
+            priority=priority,
+            output_dir=output_dir,
+            language=language,
+        )
+        log.info(
+            f"[{self.config['name']}] Queued: {name} [{job_id}] "
+            f"(priority {priority}, lang={language or 'auto'}, output={output_dir})"
+        )
+
+
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
 def run():
@@ -329,25 +404,39 @@ def run():
         f"{len(batch_entries)} batch-mode entries"
     )
 
-    # Single-mode: watchdog
-    observer       = Observer()
-    single_handlers = []
+    # Single-mode: watchdog (inotify) or polling depending on config
+    observer        = Observer()
+    single_handlers = []   # watchdog-based
+    single_pollers  = []   # polling-based
 
     for entry in single_entries:
         watch_path = Path(entry["path"])
-        watch_path.mkdir(parents=True, exist_ok=True)
-        handler = SingleModeHandler(entry)
-        handler.scan_existing()
-        observer.schedule(handler, str(watch_path), recursive=False)
-        single_handlers.append(handler)
-        log.info(f"  Single: '{entry['name']}' → {watch_path}")
 
-    # Batch-mode: polling
+        if entry.get("poll", False):
+            # Polling mode — for CIFS/NFS mounts
+            poller = SingleModePoller(entry, poll_interval=poll_interval)
+            poller.scan()   # check for existing files at startup
+            single_pollers.append(poller)
+            log.info(
+                f"  Single (poll): '{entry['name']}' → {watch_path} "
+                f"(every {poller.poll_interval}s)"
+            )
+        else:
+            # Watchdog mode — for local filesystems
+            if not watch_path.exists():
+                watch_path.mkdir(parents=True, exist_ok=True)
+            handler = SingleModeHandler(entry)
+            handler.scan_existing()
+            observer.schedule(handler, str(watch_path), recursive=False)
+            single_handlers.append(handler)
+            log.info(f"  Single (watch): '{entry['name']}' → {watch_path}")
+
+    # Batch-mode: always polling (CIFS doesn't deliver inotify events)
     batch_pollers = []
 
     for entry in batch_entries:
         poller = BatchModePoller(entry, poll_interval=poll_interval)
-        poller.scan()   # process any .done files already present at startup
+        poller.scan()
         batch_pollers.append(poller)
         done_ext = entry.get("done_extension", ".done")
         log.info(
@@ -364,10 +453,14 @@ def run():
             time.sleep(1)
             tick += 1
 
+            # Watchdog-based single handlers: process settled files
             for h in single_handlers:
                 h.process_settled()
 
+            # Polling-based handlers: scan on interval
             if tick % poll_interval == 0:
+                for p in single_pollers:
+                    p.scan()
                 for p in batch_pollers:
                     p.scan()
 
