@@ -37,11 +37,15 @@ clear_state() { rm -f "$STATE_FILE"; }
 # ── Preflight ─────────────────────────────────────────────────────────────────
 preflight() {
     log "Running preflight checks…"
+
     [[ $EUID -eq 0 ]] || fail "This script must be run as root (use sudo)"
+
     . /etc/os-release
     [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]] \
-        || warn "Tested on Ubuntu 24.04. Current: $PRETTY_NAME"
+        || warn "This script is tested on Ubuntu 24.04. Current: $PRETTY_NAME"
+
     ping -c1 -W3 8.8.8.8 &>/dev/null || fail "No internet connection"
+
     ok "Preflight checks passed"
 }
 
@@ -60,28 +64,33 @@ prompt_config() {
     echo -e "${BOLD}Please answer the following questions to configure the system:${RESET}"
     echo ""
 
+    # Username
     local default_user="${SUDO_USER:-$(logname 2>/dev/null || echo '')}"
     read -rp "$(echo -e "  Service user [${default_user}]: ")" INPUT_USER
     APP_USER="${INPUT_USER:-$default_user}"
     id "$APP_USER" &>/dev/null || fail "User '$APP_USER' does not exist"
 
+    # Server IP
     local detected_ip
     detected_ip=$(hostname -I | awk '{print $1}')
     read -rp "$(echo -e "  Server IP address [${detected_ip}]: ")" INPUT_IP
     APP_IP="${INPUT_IP:-$detected_ip}"
 
+    # HF Token
     echo ""
     echo -e "  ${AMBER}Hugging Face token — required for speaker diarization${RESET}"
     echo -e "  Get yours at: https://huggingface.co/settings/tokens"
     read -rp "  HF_TOKEN: " HF_TOKEN
     [[ -n "$HF_TOKEN" ]] || fail "HF_TOKEN cannot be empty"
 
+    # Webhook secret
     echo ""
     local default_secret
     default_secret=$(openssl rand -hex 16)
     read -rp "$(echo -e "  Webhook secret [auto-generated: ${default_secret}]: ")" INPUT_SECRET
     WEBHOOK_SECRET="${INPUT_SECRET:-$default_secret}"
 
+    # Organization name
     echo ""
     read -rp "  Organization name [Your Organization]: " INPUT_ORG
     APP_ORG="${INPUT_ORG:-Your Organization}"
@@ -98,6 +107,7 @@ prompt_config() {
     read -rp "$(echo -e "${BOLD}Proceed with installation? [y/N]: ${RESET}")" CONFIRM
     [[ "${CONFIRM,,}" == "y" ]] || { echo "Aborted."; exit 0; }
 
+    # Save config for resume-after-reboot
     cat > /tmp/.transcription_config <<EOF
 APP_USER="${APP_USER}"
 APP_IP="${APP_IP}"
@@ -128,15 +138,16 @@ step_nvidia() {
     apt-get install -y ubuntu-drivers-common
     ubuntu-drivers autoinstall
 
+    # Register resume service so install continues after reboot
     local script_path
     script_path="$(realpath "$0")"
 
     cat > "$RESUME_SERVICE" <<EOF
 [Unit]
-Description=Transcription Installer Resume
+Description=Transkription Installer Resume
 After=network-online.target
 Wants=network-online.target
-ConditionPathExists=${STATE_FILE}
+ConditionPathExists=/tmp/.transcription_install_state
 
 [Service]
 Type=oneshot
@@ -204,7 +215,9 @@ step_clone() {
         sudo -u "$APP_USER" git clone "$REPO_URL" "$INSTALL_DIR"
     fi
 
+    # Create required subdirectories
     sudo -u "$APP_USER" mkdir -p "${INSTALL_DIR}/watchfolder" "${INSTALL_DIR}/output"
+
     ok "Repository ready at ${INSTALL_DIR}"
 }
 
@@ -223,10 +236,12 @@ step_venv() {
 
     local pip="${venv}/bin/pip"
 
+    # Detect CUDA version from nvidia-smi
     local cuda_ver cuda_tag
     cuda_ver=$(nvidia-smi | grep -oP 'CUDA Version: \K[\d.]+' | head -1)
     log "Detected CUDA version: ${cuda_ver}"
 
+    # Map CUDA version to PyTorch index tag
     if [[ "$cuda_ver" == 12.* ]]; then
         local cuda_minor
         cuda_minor=$(echo "$cuda_ver" | cut -d. -f2)
@@ -246,6 +261,7 @@ step_venv() {
         torch torchvision torchaudio \
         --index-url "https://download.pytorch.org/whl/${cuda_tag}"
 
+    # Verify GPU access
     sudo -u "$APP_USER" "${venv}/bin/python" -c \
         "import torch; assert torch.cuda.is_available(), 'CUDA not available'" \
         || fail "PyTorch cannot access the GPU — check NVIDIA driver"
@@ -257,7 +273,7 @@ step_venv() {
     ok "Dependencies installed"
 }
 
-# ── Step 6: .env and config files ─────────────────────────────────────────────
+# ── Step 6: .env file ─────────────────────────────────────────────────────────
 step_env() {
     log "Step 6/10 — Environment file (.env)"
 
@@ -265,8 +281,10 @@ step_env() {
 
     if [[ -f "$env_file" ]]; then
         warn ".env already exists — skipping (delete it manually to regenerate)"
-    else
-        cat > "$env_file" <<EOF
+        return
+    fi
+
+    cat > "$env_file" <<EOF
 HF_TOKEN=${HF_TOKEN}
 OUTPUT_DIR=${INSTALL_DIR}/output
 WEBHOOK_SECRET=${WEBHOOK_SECRET}
@@ -274,25 +292,28 @@ SETTLE_TIME=5
 BATCH_POLL_INTERVAL=10
 WORKER_POLL=3
 EOF
-        chmod 600 "$env_file"
-        chown "${APP_USER}:${APP_USER}" "$env_file"
-        ok ".env written"
-    fi
 
+    chmod 600 "$env_file"
+    chown "${APP_USER}:${APP_USER}" "$env_file"
+
+    # Patch organization name into config.yaml
     local cfg="${INSTALL_DIR}/config.yaml"
     if [[ -f "${cfg}.example" && ! -f "$cfg" ]]; then
         cp "${cfg}.example" "$cfg"
+    fi
+    if [[ -f "$cfg" ]]; then
         sed -i "s|organization:.*|organization: \"${APP_ORG}\"|" "$cfg"
         chown "${APP_USER}:${APP_USER}" "$cfg"
-        ok "config.yaml created from example"
     fi
 
+    # Copy watchfolders.yaml.example if needed
     local wf="${INSTALL_DIR}/watchfolders.yaml"
     if [[ -f "${wf}.example" && ! -f "$wf" ]]; then
         cp "${wf}.example" "$wf"
         chown "${APP_USER}:${APP_USER}" "$wf"
-        ok "watchfolders.yaml created from example"
     fi
+
+    ok ".env written and config files prepared"
 }
 
 # ── Step 7: Systemd services ──────────────────────────────────────────────────
@@ -356,6 +377,7 @@ EOF
 step_nginx() {
     log "Step 8/10 — nginx HTTPS configuration"
 
+    # Self-signed certificate
     mkdir -p /etc/nginx/certs
     if [[ ! -f /etc/nginx/certs/transcription.crt ]]; then
         openssl req -x509 -nodes -newkey rsa:4096 \
@@ -370,6 +392,7 @@ step_nginx() {
         ok "Certificate already exists — skipping"
     fi
 
+    # nginx site config
     cat > /etc/nginx/sites-available/transcription <<EOF
 server {
     listen 80;
@@ -407,7 +430,7 @@ EOF
     ok "nginx configured and running"
 }
 
-# ── Step 9: First run ─────────────────────────────────────────────────────────
+# ── Step 9: First run (model download) ───────────────────────────────────────
 step_first_run() {
     log "Step 9/10 — First run (Whisper model download ~3 GB)"
     warn "This may take several minutes depending on your connection."
@@ -415,9 +438,9 @@ step_first_run() {
     local venv="${INSTALL_DIR}/venv"
     local env_file="${INSTALL_DIR}/.env"
 
+    # Find a test file if one exists
     local test_file
-    test_file=$(find "${INSTALL_DIR}/watchfolder" \
-        \( -name "*.mp3" -o -name "*.mp4" -o -name "*.wav" \) 2>/dev/null | head -1 || true)
+    test_file=$(find "${INSTALL_DIR}/watchfolder" -name "*.mp3" -o -name "*.mp4" -o -name "*.wav" 2>/dev/null | head -1 || true)
 
     if [[ -z "$test_file" ]]; then
         warn "No test file found in ${INSTALL_DIR}/watchfolder — skipping first-run test"
@@ -435,7 +458,7 @@ step_first_run() {
       || warn "First-run test failed — check logs. The system may still work for real jobs."
 }
 
-# ── Step 10: Cleanup ──────────────────────────────────────────────────────────
+# ── Step 10: Cleanup resume service ───────────────────────────────────────────
 step_cleanup() {
     log "Step 10/10 — Cleanup"
 
@@ -447,6 +470,7 @@ step_cleanup() {
 
     rm -f /tmp/.transcription_config
     clear_state
+
     ok "Resume service removed"
 }
 
@@ -462,7 +486,7 @@ summary() {
     echo -e "  ${BOLD}System status:${RESET}  https://${APP_IP}/system"
     echo ""
     echo -e "  ${BOLD}Next steps:${RESET}"
-    echo -e "  1. Accept the browser certificate warning (self-signed)"
+    echo -e "  1. Accept the browser warning for the self-signed certificate"
     echo -e "  2. Edit ${INSTALL_DIR}/watchfolders.yaml for your folder structure"
     echo -e "  3. Accept pyannote model terms at huggingface.co (if not done yet)"
     echo ""
@@ -475,8 +499,10 @@ main() {
     local resume=false
     [[ "${1:-}" == "--resume" ]] && resume=true
 
-    REPO_URL=$(git -C "$(dirname "$(realpath "$0")")" remote get-url origin 2>/dev/null || echo "")
-    [[ -n "$REPO_URL" ]] || fail "Could not determine repo URL. Run this script from inside the cloned repository."
+    # Determine repo URL from git remote (script lives in the repo)
+    REPO_URL=$(git -C "$(dirname "$(realpath "$0")")" remote get-url origin 2>/dev/null \
+               || echo "")
+    [[ -n "$REPO_URL" ]] || fail "Could not determine repo URL. Run this script from inside the cloned repository, or set REPO_URL manually."
 
     touch "$LOG_FILE"
     chmod 644 "$LOG_FILE"
@@ -493,6 +519,7 @@ main() {
     local state
     state=$(load_state)
 
+    # Run steps from current state onwards
     run_from() {
         local steps=("step_nvidia" "step_packages" "step_python" "step_clone"
                      "step_venv" "step_env" "step_services" "step_nginx"
@@ -507,16 +534,16 @@ main() {
     }
 
     case "$state" in
-        start)           run_from "step_nvidia"    ;;
-        step_packages)   run_from "step_packages"  ;;
-        step_python)     run_from "step_python"    ;;
-        step_clone)      run_from "step_clone"     ;;
-        step_venv)       run_from "step_venv"      ;;
-        step_env)        run_from "step_env"       ;;
-        step_services)   run_from "step_services"  ;;
-        step_nginx)      run_from "step_nginx"     ;;
-        step_first_run)  run_from "step_first_run" ;;
-        step_cleanup)    run_from "step_cleanup"   ;;
+        start)           run_from "step_nvidia"   ;;
+        step_packages)   run_from "step_packages" ;;
+        step_python)     run_from "step_python"   ;;
+        step_clone)      run_from "step_clone"    ;;
+        step_venv)       run_from "step_venv"     ;;
+        step_env)        run_from "step_env"      ;;
+        step_services)   run_from "step_services" ;;
+        step_nginx)      run_from "step_nginx"    ;;
+        step_first_run)  run_from "step_first_run";;
+        step_cleanup)    run_from "step_cleanup"  ;;
     esac
 
     summary
