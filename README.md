@@ -48,11 +48,11 @@ Quick overview:
 
 ## Configuration files
 
-| File | Purpose | In Git |
-|------|---------|--------|
-| `config.yaml` | Branding, model, colors, priorities | ✅ |
-| `watchfolders.yaml` | Watchfolder paths and modes | ✅ |
-| `.env` | Tokens, secrets, paths | ✅ |
+| File | Purpose | 
+|------|---------|
+| `config.yaml` | Branding, model, colors, priorities |
+| `watchfolders.yaml` | Watchfolder paths and modes |
+| `.env` | Tokens, secrets, paths |
 
 ## Version
 
