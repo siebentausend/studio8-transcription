@@ -59,13 +59,13 @@ sudo apt install python3.11 python3.11-venv python3.11-dev -y
 ## Step 4 — Project directory
 
 ```bash
-sudo mkdir -p /opt/transkription
-sudo chown $USER:$USER /opt/transkription
-cd /opt/transkription
+sudo mkdir -p /opt/transcription
+sudo chown $USER:$USER /opt/transcription
+cd /opt/transcription
 mkdir watchfolder output
 ```
 
-Copy all project files into `/opt/transkription/`:
+Copy all project files into `/opt/transcription/`:
 ```
 app.py
 transcribe.py
@@ -84,7 +84,7 @@ VERSION
 ## Step 5 — Python environment
 
 ```bash
-cd /opt/transkription
+cd /opt/transcription
 python3.11 -m venv venv
 source venv/bin/activate
 ```
@@ -125,13 +125,13 @@ The pyannote diarization model requires a free Hugging Face account.
 ## Step 7 — Environment file (.env)
 
 ```bash
-nano /opt/transkription/.env
+nano /opt/transcription/.env
 ```
 
 Contents:
 ```
 HF_TOKEN=hf_YourTokenHere
-OUTPUT_DIR=/opt/transkription/output
+OUTPUT_DIR=/opt/transcription/output
 WEBHOOK_SECRET=choose-a-strong-secret
 SETTLE_TIME=5
 BATCH_POLL_INTERVAL=10
@@ -140,7 +140,7 @@ WORKER_POLL=3
 
 Secure it:
 ```bash
-chmod 600 /opt/transkription/.env
+chmod 600 /opt/transcription/.env
 ```
 
 > **Note:** `DEVICE`, `WHISPER_MODEL`, and `LANGUAGE` are now configured in
@@ -153,7 +153,7 @@ chmod 600 /opt/transkription/.env
 Edit to match your organization:
 
 ```bash
-nano /opt/transkription/config.yaml
+nano /opt/transcription/config.yaml
 ```
 
 Key settings:
@@ -178,10 +178,10 @@ priority:
 Edit to match your folder structure:
 
 ```bash
-nano /opt/transkription/watchfolders.yaml
+nano /opt/transcription/watchfolders.yaml
 ```
 
-The default single-mode entry monitors `/opt/transkription/watchfolder/`.
+The default single-mode entry monitors `/opt/transcription/watchfolder/`.
 Add batch-mode entries for NAS/ingest systems as needed.
 
 ---
@@ -189,7 +189,7 @@ Add batch-mode entries for NAS/ingest systems as needed.
 ## Step 10 — First test
 
 ```bash
-cd /opt/transkription
+cd /opt/transcription
 source venv/bin/activate
 export $(cat .env | xargs)
 
@@ -205,7 +205,7 @@ Expected output:
 [3/5] Transcribing…
 [4/5] Word alignment…
 [5/5] Speaker diarization…
-✓ Transcript saved: /opt/transkription/output/test_transcript.txt
+✓ Transcript saved: /opt/transcription/output/test_transcript.txt
 ```
 
 ---
@@ -217,7 +217,7 @@ Three services need to be installed: **worker**, **watchfolder**, and **webgui**
 ### Worker (GPU transcription)
 
 ```bash
-sudo nano /etc/systemd/system/transkription-worker.service
+sudo nano /etc/systemd/system/transcription-worker.service
 ```
 
 ```ini
@@ -228,9 +228,9 @@ After=network.target
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/opt/transkription
-EnvironmentFile=/opt/transkription/.env
-ExecStart=/opt/transkription/venv/bin/python worker.py
+WorkingDirectory=/opt/transcription
+EnvironmentFile=/opt/transcription/.env
+ExecStart=/opt/transcription/venv/bin/python worker.py
 Restart=on-failure
 RestartSec=10
 
@@ -241,7 +241,7 @@ WantedBy=multi-user.target
 ### Watchfolder
 
 ```bash
-sudo nano /etc/systemd/system/transkription-watchfolder.service
+sudo nano /etc/systemd/system/transcription-watchfolder.service
 ```
 
 ```ini
@@ -252,9 +252,9 @@ After=network.target
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/opt/transkription
-EnvironmentFile=/opt/transkription/.env
-ExecStart=/opt/transkription/venv/bin/python watchfolder.py
+WorkingDirectory=/opt/transcription
+EnvironmentFile=/opt/transcription/.env
+ExecStart=/opt/transcription/venv/bin/python watchfolder.py
 Restart=on-failure
 RestartSec=10
 
@@ -265,7 +265,7 @@ WantedBy=multi-user.target
 ### Web GUI
 
 ```bash
-sudo nano /etc/systemd/system/transkription-webgui.service
+sudo nano /etc/systemd/system/transcription-webgui.service
 ```
 
 ```ini
@@ -276,9 +276,9 @@ After=network.target
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/opt/transkription
-EnvironmentFile=/opt/transkription/.env
-ExecStart=/opt/transkription/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
+WorkingDirectory=/opt/transcription
+EnvironmentFile=/opt/transcription/.env
+ExecStart=/opt/transcription/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=10
 
@@ -291,20 +291,20 @@ WantedBy=multi-user.target
 ```bash
 sudo systemctl daemon-reload
 
-sudo systemctl enable transkription-worker
-sudo systemctl enable transkription-watchfolder
-sudo systemctl enable transkription-webgui
+sudo systemctl enable transcription-worker
+sudo systemctl enable transcription-watchfolder
+sudo systemctl enable transcription-webgui
 
-sudo systemctl start transkription-worker
-sudo systemctl start transkription-watchfolder
-sudo systemctl start transkription-webgui
+sudo systemctl start transcription-worker
+sudo systemctl start transcription-watchfolder
+sudo systemctl start transcription-webgui
 ```
 
 Verify:
 ```bash
-sudo systemctl status transkription-worker
-sudo systemctl status transkription-watchfolder
-sudo systemctl status transkription-webgui
+sudo systemctl status transcription-worker
+sudo systemctl status transcription-watchfolder
+sudo systemctl status transcription-webgui
 ```
 
 ---
@@ -325,7 +325,7 @@ sudo openssl req -x509 -nodes -newkey rsa:4096 \
 
 Configure nginx:
 ```bash
-sudo nano /etc/nginx/sites-available/transkription
+sudo nano /etc/nginx/sites-available/transcription
 ```
 
 ```nginx
@@ -355,8 +355,8 @@ server {
 
 Enable and start:
 ```bash
-sudo ln -s /etc/nginx/sites-available/transkription \
-           /etc/nginx/sites-enabled/transkription
+sudo ln -s /etc/nginx/sites-available/transcription \
+           /etc/nginx/sites-enabled/transcription
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t
 sudo systemctl enable nginx
@@ -417,12 +417,12 @@ ls /mnt/Archive
 
 ```bash
 # View live logs
-journalctl -u transkription-worker -f
-journalctl -u transkription-watchfolder -f
-journalctl -u transkription-webgui -f
+journalctl -u transcription-worker -f
+journalctl -u transcription-watchfolder -f
+journalctl -u transcription-webgui -f
 
 # Restart a service after config change
-sudo systemctl restart transkription-worker
+sudo systemctl restart transcription-worker
 
 # Check GPU
 nvidia-smi
@@ -432,7 +432,7 @@ source venv/bin/activate && export $(cat .env | xargs)
 python transcribe.py /path/to/file.mxf
 
 # After editing config.yaml — restart all services
-sudo systemctl restart transkription-worker transkription-watchfolder transkription-webgui
+sudo systemctl restart transcription-worker transcription-watchfolder transcription-webgui
 ```
 
 ---
