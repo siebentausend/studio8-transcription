@@ -19,7 +19,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Header, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from jobstore import delete_job, delete_jobs, get_job, get_jobs, init_db, submit_job
+from jobstore import delete_job, delete_jobs, get_job, get_jobs, init_db, retry_job, submit_job
 from watchfolder import get_batch_config
 from transcribe import OUTPUT_DIR, SUPPORTED_EXTENSIONS
 from settings import cfg
@@ -138,8 +138,14 @@ async def download(job_id: str):
     return FileResponse(out, filename=out.name, media_type="text/plain")
 
 
-@app.delete("/api/jobs/{job_id}")
-async def api_delete_job(job_id: str):
+@app.post("/api/jobs/{job_id}/retry")
+async def api_retry_job(job_id: str):
+    """Requeue a failed job for retry."""
+    max_retries = cfg.priority.max_retries
+    ok, msg = retry_job(job_id, max_retries=max_retries)
+    if not ok:
+        return JSONResponse({"error": msg}, status_code=400)
+    return JSONResponse({"retried": job_id, "message": msg})
     ok = delete_job(job_id)
     if not ok:
         return JSONResponse({"error": "Job not found"}, status_code=404)
@@ -529,6 +535,13 @@ async function clearAll(){{
   refresh();
 }}
 
+async function retryJob(id){{
+  const r=await fetch('/api/jobs/'+id+'/retry',{{method:'POST'}});
+  const d=await r.json();
+  if(d.error){{alert(d.error);return;}}
+  refresh();
+}}
+
 async function delJob(id){{await fetch('/api/jobs/'+id,{{method:'DELETE'}});refresh();}}
 
 async function refresh(){{
@@ -550,7 +563,10 @@ async function refresh(){{
     <td>${{(j.status==='running'||j.status==='queued')?pips(j.step):''}}</td>
     <td class="mc">${{j.error||j.message||''}}</td>
     <td class="tc">${{ft(j.updated_at)}}</td>
-    <td>${{j.status!=='running'?`<button class="qbtn-del" onclick="delJob('${{j.id}}')" title="Delete">✕</button>`:''}}</td>
+    <td>${{j.status!=='running'?`
+      ${{j.status==='error'?`<button class="qbtn-del" onclick="retryJob('${{j.id}}')" title="Retry" style="margin-right:4px">↺</button>`:''}}
+      <button class="qbtn-del" onclick="delJob('${{j.id}}')" title="Delete">✕</button>
+    `:''}}</td>
   </tr>`).join('');
   tw.innerHTML=`<table><thead><tr>
     <th>File</th><th>Source</th><th>Status</th><th>Progress</th><th>Message</th><th>Updated</th><th></th>

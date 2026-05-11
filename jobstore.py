@@ -60,6 +60,7 @@ def init_db():
             ("output_dir",  "TEXT DEFAULT ''"),
             ("output_dirs", "TEXT DEFAULT ''"),   # JSON list of additional output paths
             ("language",    "TEXT DEFAULT ''"),
+            ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
         ]:
             try:
                 con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {definition}")
@@ -173,12 +174,38 @@ def delete_jobs(status: str | None = None) -> int:
     return cur.rowcount
 
 
+def retry_job(job_id: str, max_retries: int = 3) -> tuple[bool, str]:
+    """
+    Requeue a failed job for retry.
+    Returns (success, message).
+    """
+    job = get_job(job_id)
+    if not job:
+        return False, "Job not found"
+    if job["status"] != "error":
+        return False, f"Job is not in error state (status: {job['status']})"
+    retry_count = job.get("retry_count", 0)
+    if retry_count >= max_retries:
+        return False, f"Maximum retries ({max_retries}) reached"
+    now = datetime.now().isoformat(timespec="seconds")
+    with _connect() as con:
+        con.execute("""
+            UPDATE jobs
+            SET status='queued', step=0, message='Retry attempt', error='',
+                retry_count=retry_count+1, updated_at=?
+            WHERE id=?
+        """, (now, job_id))
+        con.commit()
+    return True, f"Retry {retry_count + 1}/{max_retries} queued"
+
+
 def reset_stale_jobs():
     """Reset any jobs stuck in 'running' state (e.g. after a crash)."""
     now = datetime.now().isoformat(timespec="seconds")
     with _connect() as con:
         con.execute("""
-            UPDATE jobs SET status='queued', step=0, message='Requeued after restart', updated_at=?
+            UPDATE jobs SET status='queued', step=0,
+            message='Requeued after restart', updated_at=?
             WHERE status='running'
         """, (now,))
         con.commit()
