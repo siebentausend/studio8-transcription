@@ -77,9 +77,16 @@ class Model:
 
 
 @dataclass
+class Watchdog:
+    poll_interval: int = 30
+    stuck_job_timeout: int = 3600
+
+
+@dataclass
 class Priority:
     manual_upload: int = 10
     watchfolder_default: int = 5
+    max_retries: int = 3
 
 
 @dataclass
@@ -100,10 +107,11 @@ class Transcript:
 
 @dataclass
 class Config:
-    version: str = "0.9.0-beta"
+    version: str = "0.9.1-beta"
     branding: Branding = field(default_factory=Branding)
     colors: Colors = field(default_factory=Colors)
     model: Model = field(default_factory=Model)
+    watchdog: Watchdog = field(default_factory=Watchdog)
     priority: Priority = field(default_factory=Priority)
     transcript: Transcript = field(default_factory=Transcript)
 
