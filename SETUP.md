@@ -61,23 +61,24 @@ sudo apt install python3.11 python3.11-venv python3.11-dev -y
 ```bash
 sudo mkdir -p /opt/transcription
 sudo chown $USER:$USER /opt/transcription
-cd /opt/transcription
-mkdir watchfolder output
 ```
 
-Copy all project files into `/opt/transcription/`:
+Clone the repository:
+```bash
+git clone https://github.com/siebentausend/studio8-transcription.git /opt/transcription
 ```
-app.py
-transcribe.py
-worker.py
-watchfolder.py
-service_watchdog.py
-jobstore.py
-settings.py
-config.yaml
-watchfolders.yaml
-requirements.txt
-VERSION
+
+Create required subdirectories:
+```bash
+cd /opt/transcription
+mkdir -p watchfolder output
+```
+
+Copy the example config files and customise them in the next steps:
+```bash
+cp config.yaml.example config.yaml
+cp watchfolders.yaml.example watchfolders.yaml
+cp .env.example .env
 ```
 
 ---
