@@ -26,6 +26,7 @@ from watchdog.observers import Observer
 
 from jobstore import init_db, submit_job
 from transcribe import SUPPORTED_EXTENSIONS
+from settings import cfg
 
 CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "./watchfolders.yaml"))
 
@@ -106,9 +107,9 @@ class SingleModeHandler(FileSystemEventHandler):
 
     def __init__(self, config: dict):
         self.config   = config
-        self.pending  = PendingFiles(int(os.environ.get("SETTLE_TIME", "5")))
+        self.pending  = PendingFiles(cfg.runtime.settle_time)
         self.submitted: set[str] = set()
-        self._staging = Path(os.environ.get("OUTPUT_DIR", "./output")) / "staging"
+        self._staging = Path(cfg.runtime.output_dir) / "staging"
 
     def on_created(self, event):
         if not event.is_directory:
@@ -142,7 +143,7 @@ class SingleModeHandler(FileSystemEventHandler):
         name   = src.name
 
         # Resolve output directory first so we can check for existing transcript
-        raw_output = self.config.get("output", os.environ.get("OUTPUT_DIR", "./output"))
+        raw_output = self.config.get("output", cfg.runtime.output_dir)
         if raw_output == "same_as_source":
             output_dir = str(src.parent)
         else:
@@ -259,7 +260,7 @@ class BatchModePoller:
         if not raw_outputs and self.config.get("output"):
             raw_outputs = [self.config["output"]]
         if not raw_outputs:
-            raw_outputs = [os.environ.get("OUTPUT_DIR", "./output")]
+            raw_outputs = [cfg.runtime.output_dir]
 
         # Primary output_dir is the first entry
         primary_output = raw_outputs[0]
@@ -330,7 +331,7 @@ class SingleModePoller:
         self.config        = config
         self.poll_interval = config.get("poll_interval", poll_interval)
         self.submitted: set[str] = set()
-        self._staging = Path(os.environ.get("OUTPUT_DIR", "./output")) / "staging"
+        self._staging = Path(cfg.runtime.output_dir) / "staging"
 
     def scan(self):
         watch_path = Path(self.config["path"])
@@ -351,7 +352,7 @@ class SingleModePoller:
         src  = Path(path)
         name = src.name
 
-        raw_output = self.config.get("output", os.environ.get("OUTPUT_DIR", "./output"))
+        raw_output = self.config.get("output", cfg.runtime.output_dir)
         if raw_output == "same_as_source":
             output_dir = str(src.parent)
         else:
@@ -397,7 +398,7 @@ def run():
 
     single_entries = [e for e in config_entries if e.get("mode", "single") == "single"]
     batch_entries  = [e for e in config_entries if e.get("mode") == "batch"]
-    poll_interval  = int(os.environ.get("BATCH_POLL_INTERVAL", "10"))
+    poll_interval  = cfg.runtime.batch_poll_interval
 
     log.info(
         f"Loaded {len(single_entries)} single-mode, "

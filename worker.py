@@ -19,9 +19,9 @@ from pathlib import Path
 import torch
 
 from jobstore import claim_next_job, get_job, init_db, reset_stale_jobs, update_job
-from transcribe import batch_transcribe, transcribe
+from settings import cfg
 
-POLL_INTERVAL = int(os.environ.get("WORKER_POLL", "3"))
+POLL_INTERVAL = int(os.environ.get("WORKER_POLL", str(cfg.runtime.worker_poll)))
 GPU_SETTLE    = 3   # seconds to wait after each job for VRAM to settle
 
 logging.basicConfig(
@@ -90,7 +90,7 @@ def process(job: dict):
     filename   = job["filename"]
     filepath   = job["filepath"]
     mode       = job.get("mode", "single")
-    output_dir = job.get("output_dir") or os.environ.get("OUTPUT_DIR", "./output")
+    output_dir = job.get("output_dir") or cfg.runtime.output_dir
     language   = job.get("language") or None
 
     log.info(f"Starting [{mode}]: {filename} [{job_id}] lang={language or 'auto'}")

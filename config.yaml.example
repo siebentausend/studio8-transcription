@@ -12,60 +12,97 @@
 version: "0.9.2-beta"
 
 
-# ── Branding ─────────────────────────────────────────────────────────
+# ── Runtime ───────────────────────────────────────────────────────────────────
+# Previously configured via .env — moved here for clarity.
+# Only HF_TOKEN and WEBHOOK_SECRET remain in .env.
+runtime:
+  # Output directory for transcripts, staging folder and job database
+  output_dir: "/opt/transcription/output"
+
+  # Seconds to wait after last file change before processing (single-mode watchfolder)
+  settle_time: 5
+
+  # Seconds between NAS polling cycles for .done marker files
+  batch_poll_interval: 10
+
+  # Seconds between job queue checks in the worker
+  worker_poll: 3
+
+
+# ── Branding ─────────────────────────────────────────────────────────────────
 branding:
+  # Shown in browser tab and page header
   organization: "Your Organization"
+
+  # Shown next to the organization name in the header
   app_name: "Transcription"
+
+  # Footer text on all pages
   footer: "WhisperX · pyannote · Your Organization"
+
+  # Subtitle on the /system status page
   system_subtitle: "System Status"
+
+  # Subtitle on the /queue page
   queue_subtitle: "Queue"
 
 
-# ── Color scheme ──────────────────────────────────────────────────────
+# ── Color scheme ──────────────────────────────────────────────────────────────
 # All values are CSS color strings (hex, rgb, named colors, etc.)
 colors:
-  bg: "#080808"
-  surface: "#111111"
-  surface2: "#1a1a1a"
-  border: "#333333"
-  border2: "#484848"
-  text: "#f0f0f0"
-  muted: "#888888"
-  green: "#39d98a"    # done / active
-  amber: "#ffcc00"    # running / warning
-  red:   "#ff5555"    # error / danger
-  blue:  "#58a6ff"    # info (reserved)
+  bg: "#080808"        # Page background
+  surface: "#111111"   # Card / panel background
+  surface2: "#1a1a1a"  # Hover states, alternating rows
+  border: "#333333"    # Primary border
+  border2: "#484848"   # Secondary border / separator
+  text: "#f0f0f0"      # Primary text
+  muted: "#888888"     # Secondary text
+  green: "#39d98a"     # Done / active
+  amber: "#ffcc00"     # Running / warning
+  red:   "#ff5555"     # Error / danger
+  blue:  "#58a6ff"     # Info (reserved)
 
 
-# ── Model settings ────────────────────────────────────────────────────
+# ── Model settings ────────────────────────────────────────────────────────────
 model:
+  # Whisper model size
   # Options: tiny, base, small, medium, large-v2, large-v3, large-v3-turbo
   # large-v3 requires ~6 GB VRAM; large-v3-turbo needs ~3 GB
   whisper_model: "large-v3"
+
+  # Compute device: "cuda" or "cpu"
   device: "cuda"
+
+  # Default language (null = auto-detect per file)
+  # Use ISO 639-1 codes: en, de, es, fr, it, etc.
   default_language: null
+
+  # Languages shown in the upload GUI dropdown (in addition to Auto-detect)
   upload_languages:
     - ["en", "English"]
     - ["de", "Deutsch"]
     - ["es", "Español"]
-  # Reduce batch_size if CUDA out-of-memory errors occur (try 2 or 1)
+
+  # Whisper inference batch size — reduce to 1 if CUDA out-of-memory errors occur
   batch_size: 2
+
   # Seconds between forced timecode breaks for single-speaker segments
   tc_interval: 60
 
 
-# ── Watchdog ──────────────────────────────────────────────────────────
+# ── Watchdog ──────────────────────────────────────────────────────────────────
 # Monitors all three services and restarts them if they fail.
 # Also detects stuck worker jobs and requeues them.
 watchdog:
   # Seconds between health checks
   poll_interval: 30
+
   # Seconds a job can be in 'running' state before it's considered stuck
   # Adjust based on your longest expected job duration
   stuck_job_timeout: 3600
 
 
-# ── Priority queue ────────────────────────────────────────────────────
+# ── Priority queue ────────────────────────────────────────────────────────────
 # Jobs are processed highest-priority first.
 # Within the same priority, jobs are processed in submission order (FIFO).
 # Running jobs are never interrupted — priority only affects queued jobs.
@@ -73,15 +110,18 @@ watchdog:
 priority:
   # Web GUI manual uploads — should always be highest
   manual_upload: 10
+
   # General watchfolder (single-mode entries without explicit priority)
   watchfolder_default: 5
+
   # Maximum number of manual retries allowed per job (via GUI ↺ button)
   max_retries: 3
+
   # Note: batch-mode watchfolder entries have their own priority
   # setting per entry in watchfolders.yaml
 
 
-# ── Transcript output ─────────────────────────────────────────────────
+# ── Transcript output ─────────────────────────────────────────────────────────
 transcript:
   date_label: "Date"
   file_label: "File"
@@ -90,4 +130,5 @@ transcript:
   timecode_label: "Timecode start"
   separator_char: "─"
   separator_length: 44
+  # Fallback speaker label when diarization is skipped (no HF_TOKEN)
   fallback_speaker: "SPEAKER_A"

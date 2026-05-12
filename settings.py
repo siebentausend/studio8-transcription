@@ -77,6 +77,14 @@ class Model:
 
 
 @dataclass
+class Runtime:
+    output_dir: str = "/opt/transcription/output"
+    settle_time: int = 5
+    batch_poll_interval: int = 10
+    worker_poll: int = 3
+
+
+@dataclass
 class Watchdog:
     poll_interval: int = 30
     stuck_job_timeout: int = 3600
@@ -107,10 +115,11 @@ class Transcript:
 
 @dataclass
 class Config:
-    version: str = "0.9.1-beta"
+    version: str = "0.9.2-beta"
     branding: Branding = field(default_factory=Branding)
     colors: Colors = field(default_factory=Colors)
     model: Model = field(default_factory=Model)
+    runtime: Runtime = field(default_factory=Runtime)
     watchdog: Watchdog = field(default_factory=Watchdog)
     priority: Priority = field(default_factory=Priority)
     transcript: Transcript = field(default_factory=Transcript)
@@ -142,6 +151,10 @@ def load_config() -> Config:
             _merge(config.colors, data["colors"])
         if "model" in data:
             _merge(config.model, data["model"])
+        if "runtime" in data:
+            _merge(config.runtime, data["runtime"])
+        if "watchdog" in data:
+            _merge(config.watchdog, data["watchdog"])
         if "priority" in data:
             _merge(config.priority, data["priority"])
         if "transcript" in data:
