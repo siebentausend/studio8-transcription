@@ -20,6 +20,7 @@ import torch
 
 from jobstore import claim_next_job, get_job, init_db, reset_stale_jobs, update_job
 from settings import cfg
+from transcribe import batch_transcribe, transcribe
 
 POLL_INTERVAL = int(os.environ.get("WORKER_POLL", str(cfg.runtime.worker_poll)))
 GPU_SETTLE    = 3   # seconds to wait after each job for VRAM to settle
