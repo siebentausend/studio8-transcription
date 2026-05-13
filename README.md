@@ -43,6 +43,7 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
+
 ---
 
 ## Repository structure
@@ -76,7 +77,9 @@ sudo ./install.sh
 ---
 
 ## Web interface
-
+<img width="1917" height="907" alt="s8-trans01" src="https://github.com/user-attachments/assets/d1708729-2a42-43b0-927b-9c41708b4534" />
+<img width="1914" height="905" alt="s8-trans02" src="https://github.com/user-attachments/assets/35500f9b-a908-4443-870e-fc028bf9197e" />
+<img width="1902" height="907" alt="s8-trans03" src="https://github.com/user-attachments/assets/6f60a15b-c4d9-4564-9489-000ff5f6b607" />
 | URL | Purpose |
 |---|---|
 | `https://server/` | Upload GUI — manual transcription |
