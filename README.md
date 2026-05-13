@@ -56,4 +56,4 @@ Quick overview:
 
 ## Version
 
-v0.9.1-beta
+dev/v1.0
