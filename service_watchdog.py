@@ -18,7 +18,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from jobstore import get_jobs, init_db, update_job
+from jobstore import get_jobs, update_job
 from settings import cfg
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -210,9 +210,8 @@ def check_stuck_jobs():
 # ── Database check ────────────────────────────────────────────────────────────
 
 def check_database():
-    """Verify the job database is reachable."""
+    """Verify the job database is reachable (read-only check)."""
     try:
-        init_db()
         get_jobs(1)
     except Exception as e:
         log.error(f"Database check failed: {e}")
