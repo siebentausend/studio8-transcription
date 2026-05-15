@@ -1,17 +1,25 @@
-# Transkriptions-System – Abhängigkeiten
-# Installation: pip install -r requirements.txt
+# requirements.txt
+# Install with: pip install -r requirements.txt
+# Note: PyTorch must be installed separately with the correct CUDA version.
+# See SETUP.md for instructions.
 
-# Kern
+# Transcription
 whisperx>=3.1.1
 faster-whisper>=1.0.0
 
-# Web-GUI
+# Web GUI
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 
-# Watchfolder
+# Watchfolder (local filesystem monitoring)
 watchdog>=4.0.0
 
-# Audio/Video-Metadaten (ffprobe-Wrapper, ffmpeg muss separat installiert sein)
+# Audio/video metadata (ffprobe wrapper — ffmpeg must be installed separately)
 ffmpeg-python>=0.2.0
+
+# Configuration
+pyyaml>=6.0
+
+# Diarization post-processing
+pandas>=2.0.0
