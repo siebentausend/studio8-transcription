@@ -61,22 +61,24 @@ sudo apt install python3.11 python3.11-venv python3.11-dev -y
 ```bash
 sudo mkdir -p /opt/transcription
 sudo chown $USER:$USER /opt/transcription
-cd /opt/transcription
-mkdir watchfolder output
 ```
 
-Copy all project files into `/opt/transcription/`:
+Clone the repository:
+```bash
+git clone https://github.com/siebentausend/studio8-transcription.git /opt/transcription
 ```
-app.py
-transcribe.py
-worker.py
-watchfolder.py
-jobstore.py
-settings.py
-config.yaml
-watchfolders.yaml
-requirements.txt
-VERSION
+
+Create required subdirectories:
+```bash
+cd /opt/transcription
+mkdir -p watchfolder output
+```
+
+Copy the example config files and customise them in the next steps:
+```bash
+cp config.yaml.example config.yaml
+cp watchfolders.yaml.example watchfolders.yaml
+cp .env.example .env
 ```
 
 ---
@@ -105,7 +107,6 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 Install remaining packages:
 ```bash
 pip install -r requirements.txt
-pip install pyyaml
 ```
 
 ---
@@ -128,23 +129,16 @@ The pyannote diarization model requires a free Hugging Face account.
 nano /opt/transcription/.env
 ```
 
-Contents:
+Contents — **secrets only**, everything else is in `config.yaml`:
 ```
 HF_TOKEN=hf_YourTokenHere
-OUTPUT_DIR=/opt/transcription/output
 WEBHOOK_SECRET=choose-a-strong-secret
-SETTLE_TIME=5
-BATCH_POLL_INTERVAL=10
-WORKER_POLL=3
 ```
 
 Secure it:
 ```bash
 chmod 600 /opt/transcription/.env
 ```
-
-> **Note:** `DEVICE`, `WHISPER_MODEL`, and `LANGUAGE` are now configured in
-> `config.yaml`, not in `.env`.
 
 ---
 
@@ -162,13 +156,24 @@ branding:
   organization: "Your Organization"
   app_name: "Transcription"
 
+runtime:
+  output_dir: "/opt/transcription/output"
+  settle_time: 5
+  batch_poll_interval: 10
+  worker_poll: 3
+
 model:
   whisper_model: "large-v3"   # large-v3-turbo uses less VRAM (~3 GB)
   device: "cuda"
 
+watchdog:
+  poll_interval: 30
+  stuck_job_timeout: 3600
+
 priority:
   manual_upload: 10
   watchfolder_default: 5
+  max_retries: 3
 ```
 
 ---
@@ -212,7 +217,7 @@ Expected output:
 
 ## Step 11 — Systemd services
 
-Three services need to be installed: **worker**, **watchfolder**, and **webgui**.
+Four services need to be installed: **worker**, **watchfolder**, **webgui** and **watchdog**.
 
 ### Worker (GPU transcription)
 
@@ -286,18 +291,43 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
+### Watchdog
+
+> **Note:** The watchdog runs as `root` so it can restart services via `systemctl`.
+
+```bash
+sudo nano /etc/systemd/system/transcription-watchdog.service
+```
+
+```ini
+[Unit]
+Description=Transcription Watchdog
+After=network.target transcription-worker.service
+Wants=transcription-worker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/transcription
+EnvironmentFile=/opt/transcription/.env
+ExecStart=/opt/transcription/venv/bin/python service_watchdog.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ### Enable and start all services
 
 ```bash
 sudo systemctl daemon-reload
 
-sudo systemctl enable transcription-worker
-sudo systemctl enable transcription-watchfolder
-sudo systemctl enable transcription-webgui
+sudo systemctl enable transcription-worker transcription-watchfolder \
+    transcription-webgui transcription-watchdog
 
-sudo systemctl start transcription-worker
-sudo systemctl start transcription-watchfolder
-sudo systemctl start transcription-webgui
+sudo systemctl start transcription-worker transcription-watchfolder \
+    transcription-webgui transcription-watchdog
 ```
 
 Verify:
@@ -305,6 +335,7 @@ Verify:
 sudo systemctl status transcription-worker
 sudo systemctl status transcription-watchfolder
 sudo systemctl status transcription-webgui
+sudo systemctl status transcription-watchdog
 ```
 
 ---
@@ -420,9 +451,17 @@ ls /mnt/Archive
 journalctl -u transcription-worker -f
 journalctl -u transcription-watchfolder -f
 journalctl -u transcription-webgui -f
+journalctl -u transcription-watchdog -f
+
+# Watchdog log file
+tail -f /var/log/transcription_watchdog.log
 
 # Restart a service after config change
 sudo systemctl restart transcription-worker
+
+# After editing config.yaml — restart all services
+sudo systemctl restart transcription-worker transcription-watchfolder \
+    transcription-webgui transcription-watchdog
 
 # Check GPU
 nvidia-smi
@@ -430,9 +469,6 @@ nvidia-smi
 # Manually queue a file via CLI
 source venv/bin/activate && export $(cat .env | xargs)
 python transcribe.py /path/to/file.mxf
-
-# After editing config.yaml — restart all services
-sudo systemctl restart transcription-worker transcription-watchfolder transcription-webgui
 ```
 
 ---
@@ -441,8 +477,10 @@ sudo systemctl restart transcription-worker transcription-watchfolder transcript
 
 - **First run:** Whisper large-v3 downloads ~3 GB on first use (cached permanently)
 - **VRAM:** large-v3 needs ~6 GB VRAM. Use `large-v3-turbo` (~3 GB) in `config.yaml` if needed
-- **CIFS polling:** Batch-mode watchfolders poll every 10 seconds (configurable via `BATCH_POLL_INTERVAL`)
+- **CIFS polling:** Batch-mode and CIFS single-mode watchfolders use polling (configurable via `BATCH_POLL_INTERVAL`). Set `poll: true` per entry in `watchfolders.yaml` for single-mode CIFS folders.
 - **Priority:** Manual uploads always take precedence over watchfolder jobs by default (configurable in `config.yaml`)
 - **Language:** Auto-detected per file using a two-pass approach — first pass detects language, second pass transcribes with `task="transcribe"` to prevent silent translation to English. Override per upload in the GUI, per watchfolder entry in `watchfolders.yaml`, or globally via `default_language` in `config.yaml`
 - **Multi-delivery:** Use `outputs` (list) instead of `output` (single) in `watchfolders.yaml` to deliver transcripts to multiple destinations simultaneously
+- **Retry:** Failed jobs can be retried via the ↺ button in the Queue GUI. Maximum retries configurable via `priority.max_retries` in `config.yaml`
+- **Watchdog:** Monitors all services every 30 seconds by default. Stuck jobs (running longer than `stuck_job_timeout`) are automatically requeued. Logs to `/var/log/transcription_watchdog.log`
 - **HF_TOKEN:** Required for diarization. The token is checked on every model load (pyannote behaviour) but no data leaves the server after the initial model download
