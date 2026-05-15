@@ -82,6 +82,7 @@ class Runtime:
     settle_time: int = 5
     batch_poll_interval: int = 10
     worker_poll: int = 3
+    update_branch: str = "main"
 
 
 @dataclass

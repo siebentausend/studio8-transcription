@@ -28,6 +28,10 @@ runtime:
   # Seconds between job queue checks in the worker
   worker_poll: 3
 
+  # Git branch to pull from when running update.sh
+  # Change to "dev/v1.0" on development machines
+  update_branch: "main"
+
 
 # ── Branding ─────────────────────────────────────────────────────────────────
 branding:
