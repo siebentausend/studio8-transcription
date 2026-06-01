@@ -9,7 +9,7 @@
 #   sudo systemctl restart transcription-watchdog
 # ────────────────────────────────────────────────────────────────────
 
-version: "dev/v1.0"
+version: "0.9.2-beta"
 
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
@@ -76,6 +76,12 @@ model:
 
   # Compute device: "cuda" or "cpu"
   device: "cuda"
+
+  # Compute type for Whisper inference
+  # float16: fastest, requires modern GPU (RTX series)
+  # int8:    fast, not supported on all GPUs (Maxwell/Kepler may fail)
+  # float32: slowest but works on all CUDA GPUs including older Quadro cards
+  compute_type: "float16"
 
   # Default language (null = auto-detect per file)
   # Use ISO 639-1 codes: en, de, es, fr, it, etc.

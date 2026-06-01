@@ -66,6 +66,7 @@ class Colors:
 class Model:
     whisper_model: str = "large-v3"
     device: str = "cuda"
+    compute_type: str = "float16"
     default_language: Optional[str] = None
     upload_languages: list = field(default_factory=lambda: [
         ["en", "English"],

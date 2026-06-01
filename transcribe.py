@@ -27,10 +27,10 @@ from settings import cfg
 
 HF_TOKEN     = os.environ.get("HF_TOKEN", "")
 DEVICE       = os.environ.get("DEVICE", cfg.model.device)
-COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
+COMPUTE_TYPE = cfg.model.compute_type if cfg.model.compute_type else ("float16" if DEVICE == "cuda" else "int8")
 MODEL_SIZE   = os.environ.get("WHISPER_MODEL", cfg.model.whisper_model)
 LANGUAGE     = os.environ.get("LANGUAGE", cfg.model.default_language)
-OUTPUT_DIR   = Path(os.environ.get("OUTPUT_DIR", "./output"))
+OUTPUT_DIR   = Path(cfg.runtime.output_dir)
 
 SUPPORTED_EXTENSIONS = {
     ".mp3", ".mp4", ".wav", ".m4a", ".aac", ".flac", ".ogg",
@@ -607,7 +607,7 @@ def batch_transcribe(
 
     # Write file
     if output_path is None:
-        out_dir  = Path(os.environ.get("OUTPUT_DIR", "./output"))
+        out_dir  = Path(cfg.runtime.output_dir)
         out_file = out_dir / f"{folder_name}_transcript.txt"
     else:
         out_file = Path(output_path)
