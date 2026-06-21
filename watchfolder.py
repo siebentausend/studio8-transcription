@@ -45,7 +45,7 @@ log = logging.getLogger(__name__)
 # over a network share) can take minutes and has caused the watchfolder
 # process to balloon in memory/IO and stall, blocking all other pending files.
 STAGING_COPY_MAX_BYTES = int(os.environ.get(
-    "STAGING_COPY_MAX_BYTES", str(cfg.runtime.staging_copy_max_gb * 1024**3)
+    "STAGING_COPY_MAX_BYTES", str(int(cfg.runtime.staging_copy_max_gb * 1024**3))
 ))
 
 
