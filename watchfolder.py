@@ -26,6 +26,7 @@ from watchdog.observers import Observer
 
 from jobstore import init_db, submit_job
 from transcribe import SUPPORTED_EXTENSIONS
+from settings import cfg
 
 CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "./watchfolders.yaml"))
 
@@ -35,6 +36,44 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+
+# ─── Staging helper ───────────────────────────────────────────────────────────
+
+# Files larger than this are never copied into staging — the worker reads
+# them directly from the source path. Copying multi-GB media files (especially
+# over a network share) can take minutes and has caused the watchfolder
+# process to balloon in memory/IO and stall, blocking all other pending files.
+STAGING_COPY_MAX_BYTES = int(os.environ.get(
+    "STAGING_COPY_MAX_BYTES", str(cfg.runtime.staging_copy_max_gb * 1024**3)
+))
+
+
+def stage_or_reference(src: Path, staging_dir: Path, job_id: str) -> str:
+    """
+    Decide how to hand off a source file to the worker:
+    - Small files: copy into the staging directory (protects against the
+      source being modified/deleted while queued).
+    - Large files: reference the original path directly — no copy.
+    Returns the filepath to store in the job record.
+    """
+    try:
+        size = src.stat().st_size
+    except OSError:
+        size = 0
+
+    if size > STAGING_COPY_MAX_BYTES:
+        log.info(
+            f"File {src.name} is {size / 1024**3:.1f} GB — exceeds staging "
+            f"copy threshold ({STAGING_COPY_MAX_BYTES / 1024**3:.0f} GB), "
+            f"referencing source directly (no copy)"
+        )
+        return str(src)
+
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    staged = staging_dir / f"{job_id}_{src.name}"
+    shutil.copy2(str(src), str(staged))
+    return str(staged)
 
 
 # ─── Config loader ────────────────────────────────────────────────────────────
@@ -106,9 +145,9 @@ class SingleModeHandler(FileSystemEventHandler):
 
     def __init__(self, config: dict):
         self.config   = config
-        self.pending  = PendingFiles(int(os.environ.get("SETTLE_TIME", "5")))
+        self.pending  = PendingFiles(cfg.runtime.settle_time)
         self.submitted: set[str] = set()
-        self._staging = Path(os.environ.get("OUTPUT_DIR", "./output")) / "staging"
+        self._staging = Path(cfg.runtime.output_dir) / "staging"
 
     def on_created(self, event):
         if not event.is_directory:
@@ -142,7 +181,7 @@ class SingleModeHandler(FileSystemEventHandler):
         name   = src.name
 
         # Resolve output directory first so we can check for existing transcript
-        raw_output = self.config.get("output", os.environ.get("OUTPUT_DIR", "./output"))
+        raw_output = self.config.get("output", cfg.runtime.output_dir)
         if raw_output == "same_as_source":
             output_dir = str(src.parent)
         else:
@@ -157,10 +196,8 @@ class SingleModeHandler(FileSystemEventHandler):
 
         self.submitted.add(path)
 
-        job_id = str(uuid.uuid4())[:8]
-        self._staging.mkdir(parents=True, exist_ok=True)
-        staged = self._staging / f"{job_id}_{name}"
-        shutil.copy2(str(src), str(staged))
+        job_id  = str(uuid.uuid4())[:8]
+        staged_path = stage_or_reference(src, self._staging, job_id)
 
         priority = self.config.get("priority", 5)
         language = self.config.get("language") or None
@@ -168,7 +205,7 @@ class SingleModeHandler(FileSystemEventHandler):
         submit_job(
             job_id,
             filename=name,
-            filepath=str(staged),
+            filepath=staged_path,
             source="watchfolder",
             priority=priority,
             output_dir=output_dir,
@@ -259,7 +296,7 @@ class BatchModePoller:
         if not raw_outputs and self.config.get("output"):
             raw_outputs = [self.config["output"]]
         if not raw_outputs:
-            raw_outputs = [os.environ.get("OUTPUT_DIR", "./output")]
+            raw_outputs = [cfg.runtime.output_dir]
 
         # Primary output_dir is the first entry
         primary_output = raw_outputs[0]
@@ -330,7 +367,7 @@ class SingleModePoller:
         self.config        = config
         self.poll_interval = config.get("poll_interval", poll_interval)
         self.submitted: set[str] = set()
-        self._staging = Path(os.environ.get("OUTPUT_DIR", "./output")) / "staging"
+        self._staging = Path(cfg.runtime.output_dir) / "staging"
 
     def scan(self):
         watch_path = Path(self.config["path"])
@@ -351,7 +388,7 @@ class SingleModePoller:
         src  = Path(path)
         name = src.name
 
-        raw_output = self.config.get("output", os.environ.get("OUTPUT_DIR", "./output"))
+        raw_output = self.config.get("output", cfg.runtime.output_dir)
         if raw_output == "same_as_source":
             output_dir = str(src.parent)
         else:
@@ -366,10 +403,8 @@ class SingleModePoller:
 
         self.submitted.add(path)
 
-        job_id = str(uuid.uuid4())[:8]
-        self._staging.mkdir(parents=True, exist_ok=True)
-        staged = self._staging / f"{job_id}_{name}"
-        shutil.copy2(str(src), str(staged))
+        job_id      = str(uuid.uuid4())[:8]
+        staged_path = stage_or_reference(src, self._staging, job_id)
 
         priority = self.config.get("priority", 5)
         language = self.config.get("language") or None
@@ -377,7 +412,7 @@ class SingleModePoller:
         submit_job(
             job_id,
             filename=name,
-            filepath=str(staged),
+            filepath=staged_path,
             source="watchfolder",
             priority=priority,
             output_dir=output_dir,
@@ -397,7 +432,7 @@ def run():
 
     single_entries = [e for e in config_entries if e.get("mode", "single") == "single"]
     batch_entries  = [e for e in config_entries if e.get("mode") == "batch"]
-    poll_interval  = int(os.environ.get("BATCH_POLL_INTERVAL", "10"))
+    poll_interval  = cfg.runtime.batch_poll_interval
 
     log.info(
         f"Loaded {len(single_entries)} single-mode, "

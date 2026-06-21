@@ -107,7 +107,6 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 Install remaining packages:
 ```bash
 pip install -r requirements.txt
-pip install pyyaml
 ```
 
 ---
@@ -130,23 +129,16 @@ The pyannote diarization model requires a free Hugging Face account.
 nano /opt/transcription/.env
 ```
 
-Contents:
+Contents — **secrets only**, everything else is in `config.yaml`:
 ```
 HF_TOKEN=hf_YourTokenHere
-OUTPUT_DIR=/opt/transcription/output
 WEBHOOK_SECRET=choose-a-strong-secret
-SETTLE_TIME=5
-BATCH_POLL_INTERVAL=10
-WORKER_POLL=3
 ```
 
 Secure it:
 ```bash
 chmod 600 /opt/transcription/.env
 ```
-
-> **Note:** `DEVICE`, `WHISPER_MODEL`, and `LANGUAGE` are now configured in
-> `config.yaml`, not in `.env`.
 
 ---
 
@@ -163,6 +155,12 @@ Key settings:
 branding:
   organization: "Your Organization"
   app_name: "Transcription"
+
+runtime:
+  output_dir: "/opt/transcription/output"
+  settle_time: 5
+  batch_poll_interval: 10
+  worker_poll: 3
 
 model:
   whisper_model: "large-v3"   # large-v3-turbo uses less VRAM (~3 GB)
@@ -486,3 +484,32 @@ python transcribe.py /path/to/file.mxf
 - **Retry:** Failed jobs can be retried via the ↺ button in the Queue GUI. Maximum retries configurable via `priority.max_retries` in `config.yaml`
 - **Watchdog:** Monitors all services every 30 seconds by default. Stuck jobs (running longer than `stuck_job_timeout`) are automatically requeued. Logs to `/var/log/transcription_watchdog.log`
 - **HF_TOKEN:** Required for diarization. The token is checked on every model load (pyannote behaviour) but no data leaves the server after the initial model download
+- **Large files:** Files larger than `runtime.staging_copy_max_gb` (default 5 GB) are referenced directly from their source path instead of being copied into staging — prevents the watchfolder from stalling on multi-GB media over a network share
+- **Compute type:** Set `model.compute_type` to `float32` if you see "Requested int8/float16 compute type not supported" errors — common on older GPUs like the Quadro M-series (Maxwell architecture)
+
+---
+
+## Updating
+
+The system can update itself to the latest GitHub release:
+
+```bash
+cd /opt/transcription
+
+# Preview what would change, without making any changes
+sudo ./update.sh --dryrun
+
+# Back up the current install, pull the latest release, restart services
+sudo ./update.sh
+
+# Restore the previous backup if something goes wrong
+sudo ./update.sh --rollback
+```
+
+The backup is stored at `/opt/transcription_backup` and is overwritten on
+each update. The branch used for updates is controlled by
+`runtime.update_branch` in `config.yaml` — set this to `dev/v1.0` (or any
+other branch) on development machines; production should stay on `main`.
+
+The Status page (`/system`) shows a banner whenever a newer release is
+available on GitHub, with a link to the release notes.

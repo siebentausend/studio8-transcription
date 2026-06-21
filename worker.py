@@ -19,9 +19,10 @@ from pathlib import Path
 import torch
 
 from jobstore import claim_next_job, get_job, init_db, reset_stale_jobs, update_job
+from settings import cfg
 from transcribe import batch_transcribe, transcribe
 
-POLL_INTERVAL = int(os.environ.get("WORKER_POLL", "3"))
+POLL_INTERVAL = int(os.environ.get("WORKER_POLL", str(cfg.runtime.worker_poll)))
 GPU_SETTLE    = 3   # seconds to wait after each job for VRAM to settle
 
 logging.basicConfig(
@@ -90,7 +91,7 @@ def process(job: dict):
     filename   = job["filename"]
     filepath   = job["filepath"]
     mode       = job.get("mode", "single")
-    output_dir = job.get("output_dir") or os.environ.get("OUTPUT_DIR", "./output")
+    output_dir = job.get("output_dir") or cfg.runtime.output_dir
     language   = job.get("language") or None
 
     log.info(f"Starting [{mode}]: {filename} [{job_id}] lang={language or 'auto'}")
@@ -133,13 +134,6 @@ def process(job: dict):
                 language=language,
             )
 
-            # Clean up staging file
-            try:
-                if "/staging/" in filepath:
-                    Path(filepath).unlink()
-            except Exception:
-                pass
-
         # Final check: job may have been deleted while last step was running
         if is_cancelled(job_id):
             raise JobCancelledError(f"Job {job_id} was cancelled via GUI")
@@ -162,6 +156,14 @@ def process(job: dict):
         log.error(f"Error processing {filename}: {e}")
 
     finally:
+        # Clean up staging file — runs on success, error AND cancellation
+        try:
+            if "/staging/" in filepath and Path(filepath).exists():
+                Path(filepath).unlink()
+                log.info(f"Removed staging file: {Path(filepath).name}")
+        except Exception as e:
+            log.warning(f"Could not remove staging file {filepath}: {e}")
+
         cleanup_gpu()
         log.info(f"GPU memory released after: {filename}")
 

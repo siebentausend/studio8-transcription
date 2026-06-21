@@ -14,7 +14,13 @@ Built on WhisperX and pyannote, running on a local GPU server.
 - Supports 99 languages with per-file auto-detection (two-pass to prevent silent translation)
 - Priority queue — manual uploads always jump ahead of automated jobs
 - Service watchdog — monitors all services, restarts on failure, detects stuck jobs
-- Config file monitoring — automatically restarts affected services when config changes
+- Config file monitoring — automatically restarts affected services when config changes, waits for any running job to finish first
+- Large-file handling — files over a configurable size are referenced directly from source instead of copied, preventing the watchfolder from stalling on multi-GB media
+- Orphaned staging file cleanup — periodic removal of leftover files from interrupted jobs
+- Retry mechanism — failed jobs can be requeued manually from the Queue page, with a configurable retry limit
+- Persistent download links — completed transcripts remain downloadable from the Queue page after a reload
+- Self-update script with dry-run mode, automatic backup, and rollback
+- Configurable compute type (`float16` / `int8` / `float32`) for compatibility with older GPUs
 
 ---
 
@@ -43,7 +49,6 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-
 ---
 
 ## Repository structure
@@ -58,6 +63,7 @@ sudo ./install.sh
 | `jobstore.py` | SQLite job queue interface |
 | `settings.py` | Config loader — typed access to config.yaml |
 | `install.sh` | Interactive installation script |
+| `update.sh` | Self-update script with dry-run, backup and rollback |
 | `requirements.txt` | Python dependencies |
 | `config.yaml.example` | Configuration template |
 | `watchfolders.yaml.example` | Watchfolder template |
@@ -77,9 +83,7 @@ sudo ./install.sh
 ---
 
 ## Web interface
-<img width="1917" height="907" alt="s8-trans01" src="https://github.com/user-attachments/assets/d1708729-2a42-43b0-927b-9c41708b4534" />
-<img width="1914" height="905" alt="s8-trans02" src="https://github.com/user-attachments/assets/35500f9b-a908-4443-870e-fc028bf9197e" />
-<img width="1902" height="907" alt="s8-trans03" src="https://github.com/user-attachments/assets/6f60a15b-c4d9-4564-9489-000ff5f6b607" />
+
 | URL | Purpose |
 |---|---|
 | `https://server/` | Upload GUI — manual transcription |
@@ -88,6 +92,18 @@ sudo ./install.sh
 
 ---
 
+## Updating
+
+```bash
+sudo ./update.sh --dryrun   # preview what would change
+sudo ./update.sh             # back up, pull latest release, restart services
+sudo ./update.sh --rollback  # restore the previous backup
+```
+
+The Git branch used for updates is set via `runtime.update_branch` in `config.yaml` (defaults to `main`).
+
+---
+
 ## Version
 
-v0.9.2-beta
+1.0.0
