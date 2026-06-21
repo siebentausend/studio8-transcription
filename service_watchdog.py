@@ -217,6 +217,49 @@ def check_database():
         log.error(f"Database check failed: {e}")
 
 
+# ── Orphaned staging files ────────────────────────────────────────────────────
+
+STAGING_DIR = Path(cfg.runtime.output_dir) / "staging"
+STAGING_MAX_AGE = cfg.watchdog.staging_max_age_hours * 3600
+
+def check_staging_dir():
+    """
+    Remove orphaned staging files older than STAGING_MAX_AGE seconds.
+    These can accumulate if a job fails before its normal cleanup runs
+    (e.g. crash, forced restart) and silently fill the disk over time.
+    """
+    if not STAGING_DIR.exists():
+        return
+
+    now = time.time()
+    removed = 0
+    freed_bytes = 0
+
+    try:
+        for f in STAGING_DIR.iterdir():
+            if not f.is_file():
+                continue
+            age = now - f.stat().st_mtime
+            if age > STAGING_MAX_AGE:
+                try:
+                    size = f.stat().st_size
+                    f.unlink()
+                    removed += 1
+                    freed_bytes += size
+                except Exception as e:
+                    log.warning(f"Could not remove orphaned staging file {f.name}: {e}")
+    except Exception as e:
+        log.error(f"Could not scan staging directory: {e}")
+        return
+
+    if removed:
+        freed_mb = freed_bytes / (1024 * 1024)
+        log.warning(
+            f"Removed {removed} orphaned staging file(s) older than "
+            f"{STAGING_MAX_AGE//3600}h — freed {freed_mb:.1f} MB"
+        )
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def run():
@@ -226,9 +269,11 @@ def run():
     log.info(f"Monitoring services: {', '.join(SERVICES)}")
     log.info(f"Monitoring config files: {', '.join(p.name for p in CONFIG_FILES)}")
     log.info(f"Stuck job timeout: {STUCK_JOB_TIMEOUT}s ({STUCK_JOB_TIMEOUT//60} min)")
+    log.info(f"Staging cleanup: files older than {STAGING_MAX_AGE//3600}h in {STAGING_DIR}")
 
     # Record initial mtimes — changes are only detected after first poll
     last_mtimes = get_mtimes()
+    last_staging_check = 0
 
     while True:
         try:
@@ -236,6 +281,11 @@ def run():
             check_database()
             check_stuck_jobs()
             last_mtimes = check_config_changes(last_mtimes)
+
+            # Staging cleanup runs every 10 minutes, not every poll cycle
+            if time.time() - last_staging_check > 600:
+                check_staging_dir()
+                last_staging_check = time.time()
         except Exception as e:
             log.error(f"Unexpected error in watchdog loop: {e}")
 

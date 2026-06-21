@@ -9,7 +9,7 @@
 #   sudo systemctl restart transcription-watchdog
 # ────────────────────────────────────────────────────────────────────
 
-version: "0.9.2-beta"
+version: "1.0.0"
 
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
@@ -31,6 +31,12 @@ runtime:
   # Git branch to pull from when running update.sh
   # Change to "dev/v1.0" on development machines
   update_branch: "main"
+
+  # Files larger than this (in GB) are never copied into the staging
+  # directory — the worker reads them directly from the source path instead.
+  # Prevents the watchfolder process from stalling on huge media files
+  # (e.g. a 64 GB MXF over a slow network share).
+  staging_copy_max_gb: 5.0
 
 
 # ── Branding ─────────────────────────────────────────────────────────────────
@@ -110,6 +116,10 @@ watchdog:
   # Seconds a job can be in 'running' state before it's considered stuck
   # Adjust based on your longest expected job duration
   stuck_job_timeout: 3600
+
+  # Hours after which orphaned files in output/staging are removed.
+  # These can accumulate if a job fails before its normal cleanup runs.
+  staging_max_age_hours: 24
 
 
 # ── Priority queue ────────────────────────────────────────────────────────────

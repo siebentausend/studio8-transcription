@@ -84,12 +84,14 @@ class Runtime:
     batch_poll_interval: int = 10
     worker_poll: int = 3
     update_branch: str = "main"
+    staging_copy_max_gb: float = 5.0
 
 
 @dataclass
 class Watchdog:
     poll_interval: int = 30
     stuck_job_timeout: int = 3600
+    staging_max_age_hours: int = 24
 
 
 @dataclass
@@ -117,7 +119,7 @@ class Transcript:
 
 @dataclass
 class Config:
-    version: str = "0.9.2-beta"
+    version: str = "1.0.0"
     branding: Branding = field(default_factory=Branding)
     colors: Colors = field(default_factory=Colors)
     model: Model = field(default_factory=Model)

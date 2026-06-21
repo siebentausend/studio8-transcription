@@ -134,13 +134,6 @@ def process(job: dict):
                 language=language,
             )
 
-            # Clean up staging file
-            try:
-                if "/staging/" in filepath:
-                    Path(filepath).unlink()
-            except Exception:
-                pass
-
         # Final check: job may have been deleted while last step was running
         if is_cancelled(job_id):
             raise JobCancelledError(f"Job {job_id} was cancelled via GUI")
@@ -163,6 +156,14 @@ def process(job: dict):
         log.error(f"Error processing {filename}: {e}")
 
     finally:
+        # Clean up staging file — runs on success, error AND cancellation
+        try:
+            if "/staging/" in filepath and Path(filepath).exists():
+                Path(filepath).unlink()
+                log.info(f"Removed staging file: {Path(filepath).name}")
+        except Exception as e:
+            log.warning(f"Could not remove staging file {filepath}: {e}")
+
         cleanup_gpu()
         log.info(f"GPU memory released after: {filename}")
 

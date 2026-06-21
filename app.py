@@ -10,6 +10,7 @@ Start:
 """
 
 import hmac
+import logging
 import os
 import shutil
 import subprocess
@@ -103,7 +104,7 @@ async def upload(file: UploadFile = File(...), language: str = "auto"):
     if ext not in SUPPORTED_EXTENSIONS:
         return JSONResponse({"error": f"File format '{ext}' is not supported."}, status_code=400)
 
-    staging = Path(os.environ.get("OUTPUT_DIR", "./output")) / "staging"
+    staging = Path(cfg.runtime.output_dir) / "staging"
     staging.mkdir(parents=True, exist_ok=True)
     job_id = str(uuid.uuid4())[:8]
     staged = staging / f"{job_id}_{file.filename}"
@@ -146,6 +147,35 @@ async def api_retry_job(job_id: str):
     if not ok:
         return JSONResponse({"error": msg}, status_code=400)
     return JSONResponse({"retried": job_id, "message": msg})
+
+
+def _delete_upload_file(job: dict):
+    """
+    Delete the transcript file on disk, but only for manually uploaded jobs.
+    Watchfolder transcripts live at user-managed locations (NAS, same_as_source,
+    etc.) and must never be touched here. Upload transcripts are only reachable
+    through the Web GUI, so removing the job record without removing the file
+    would leave it stranded on disk with nothing pointing to it.
+    """
+    if job.get("source") != "upload":
+        return
+    out = job.get("output")
+    if not out:
+        return
+    try:
+        p = Path(out)
+        if p.exists():
+            p.unlink()
+            logging.getLogger("cleanup").info(f"Deleted upload transcript: {p.name}")
+    except Exception as e:
+        logging.getLogger("cleanup").warning(f"Could not delete upload transcript {out}: {e}")
+
+
+@app.delete("/api/jobs/{job_id}")
+async def api_delete_job(job_id: str):
+    job = get_job(job_id)
+    if job:
+        _delete_upload_file(job)
     ok = delete_job(job_id)
     if not ok:
         return JSONResponse({"error": "Job not found"}, status_code=404)
@@ -155,6 +185,13 @@ async def api_retry_job(job_id: str):
 @app.delete("/api/jobs")
 async def api_delete_jobs(status: str = "all"):
     s = None if status == "all" else status
+    jobs = get_jobs(1000, source=None)
+    for job in jobs:
+        if job["status"] == "running":
+            continue
+        if s and job["status"] != s:
+            continue
+        _delete_upload_file(job)
     count = delete_jobs(s)
     return JSONResponse({"deleted": count, "status": status})
 
@@ -206,7 +243,7 @@ async def api_system():
         if j.get("status") in counts:
             counts[j["status"]] += 1
 
-    output_dir = os.environ.get("OUTPUT_DIR", "./output")
+    output_dir = cfg.runtime.output_dir
     disk = {}
     try:
         usage = _shutil.disk_usage(output_dir)
@@ -216,7 +253,32 @@ async def api_system():
     except Exception:
         disk = {"error": "unavailable"}
 
-    return JSONResponse({"version": cfg.version, "services": services, "gpu": gpu, "queue": counts, "disk": disk})
+    # ── Update check ──────────────────────────────────────────────────────────
+    update_info = {}
+    try:
+        import urllib.request
+        import json as _json
+        req = urllib.request.Request(
+            "https://api.github.com/repos/siebentausend/studio8-transcription/releases/latest",
+            headers={"User-Agent": "transcription-system"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = _json.loads(resp.read())
+            latest = data.get("tag_name", "")
+            current = cfg.version
+            update_info = {
+                "current": current,
+                "latest": latest,
+                "available": latest != current and latest != "",
+                "release_date": data.get("published_at", "")[:10],
+                "release_notes": data.get("body", "")[:300],
+                "release_url": data.get("html_url", ""),
+            }
+    except Exception:
+        update_info = {"current": cfg.version, "latest": "", "available": False}
+
+    return JSONResponse({"version": cfg.version, "services": services, "gpu": gpu,
+                         "queue": counts, "disk": disk, "update": update_info})
 
 
 @app.post("/webhook/ingest-complete")
@@ -254,7 +316,7 @@ async def webhook_ingest_complete(
 
     job_id     = str(uuid.uuid4())[:8]
     priority   = body.get("priority", batch_cfg.get("priority", 7))
-    output_dir = batch_cfg.get("output", os.environ.get("OUTPUT_DIR", "./output"))
+    output_dir = batch_cfg.get("output", cfg.runtime.output_dir)
 
     submit_job(job_id, filename=folder_path.name, filepath=str(folder_path),
                source="watchfolder", priority=priority, mode="batch", output_dir=output_dir)
@@ -564,6 +626,7 @@ async function refresh(){{
     <td class="mc">${{j.error||j.message||''}}</td>
     <td class="tc">${{ft(j.updated_at)}}</td>
     <td>${{j.status!=='running'?`
+      ${{j.status==='done'?`<a class="qbtn-del" href="/download/${{j.id}}" download title="Download transcript" style="margin-right:4px;text-decoration:none">TXT ↓</a>`:''}}
       ${{j.status==='error'?`<button class="qbtn-del" onclick="retryJob('${{j.id}}')" title="Retry" style="margin-right:4px">↺</button>`:''}}
       <button class="qbtn-del" onclick="delJob('${{j.id}}')" title="Delete">✕</button>
     `:''}}</td>
@@ -621,7 +684,19 @@ def make_system_html() -> str:
 <body>
 {_nav("system")}
 <main>
-  <div class="grid">
+  <div id="update-banner" style="display:none;background:var(--amber-bg,#fdf3e0);border:1px solid #e0b060;border-radius:6px;padding:14px 20px;margin-bottom:2px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--amber,#92600a);">⬆ Update available</span>
+        <span id="update-version" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:10px;"></span>
+      </div>
+      <a id="update-link" href="#" target="_blank" style="font-family:var(--mono);font-size:10px;color:var(--amber,#92600a);text-decoration:none;border:1px solid #e0b060;padding:3px 10px;border-radius:3px;">View release ↗</a>
+    </div>
+    <div id="update-notes" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;white-space:pre-wrap;"></div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px;">
+      Run on server: <code style="background:rgba(0,0,0,.06);padding:2px 6px;border-radius:3px;">sudo /opt/transcription/update.sh</code>
+    </div>
+  </div>
     <div class="card">
       <div class="card-title">Services</div>
       <div id="svc-list">
@@ -689,6 +764,23 @@ async function refresh(){{
   }}
 
   document.getElementById('rn').textContent='v'+d.version+' · Refreshed '+new Date().toLocaleTimeString('en-GB');
+
+  // Update banner
+  const upd = d.update || {{}};
+  const banner = document.getElementById('update-banner');
+  if(banner){{
+    if(upd.available){{
+      banner.style.display='block';
+      document.getElementById('update-version').textContent=
+        d.version+' → '+upd.latest+' ('+upd.release_date+')';
+      const link = document.getElementById('update-link');
+      if(link) link.href = upd.release_url || '#';
+      const notes = document.getElementById('update-notes');
+      if(notes) notes.textContent = (upd.release_notes||'').trim().slice(0,300);
+    }} else {{
+      banner.style.display='none';
+    }}
+  }}
 }}
 
 refresh();
